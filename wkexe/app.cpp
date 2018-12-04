@@ -79,7 +79,8 @@ BOOL FixupHtmlFileUrl(LPCWSTR pathOption, LPWSTR urlBuffer, size_t bufferSize)
 
 BOOL FixupHtmlUrl(Application* app)
 {
-    LPWSTR htmlOption = app->options.htmlFile;
+	//LPWSTR htmlOption = L"http://www.fsmeeting.com"; //app->options.htmlFile;
+	LPWSTR htmlOption = L"https://ws.fsmeeting.com/signup.html"; //app->options.htmlFile;
     WCHAR htmlUrl[MAX_PATH + 1] = { 0 };
 
     // 包含 :// 说明是完整的URL
@@ -224,11 +225,11 @@ void RunApplication(Application* app)
 {
     memset(app, 0, sizeof(Application));
 
-    if (!ProcessOptions(app))
-    {
-        PrintHelpAndQuit(app);
-        return;
-    }
+//     if (!ProcessOptions(app))
+//     {
+//         PrintHelpAndQuit(app);
+//         return;
+//     }
 
     if (!FixupHtmlUrl(app))
     {

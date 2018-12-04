@@ -1314,14 +1314,19 @@ bool jsReleaseRef(jsExecState es, jsValue val)
     return true;
 }
 
+#define MAX_NAME_LENGTH 1024	//调整到这里来 haipe 2018-12-04
+
 struct AddFunctionInfo {
-    AddFunctionInfo(wkeJsNativeFunction nativeFunction, void* param) {
+    AddFunctionInfo(const char* name, wkeJsNativeFunction nativeFunction, void* param) {
         this->nativeFunction = nativeFunction;
         this->param = param;
+
+        strncpy(this->name, name, MAX_NAME_LENGTH - 1); //增加名称 haipe 2018-12-4 以便回调
     }
 
     wkeJsNativeFunction nativeFunction;
     void* param;
+    char name[MAX_NAME_LENGTH];	//增加名称 haipe 2018-12-4 以便回调
 };
 
 static void functionCallbackImpl(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -1337,7 +1342,8 @@ static void functionCallbackImpl(const v8::FunctionCallbackInfo<v8::Value>& info
     execState->context.Reset(isolate, context);
 
     wke::AutoDisableFreeV8TempObejct autoDisableFreeV8TempObejct;
-    jsValue retVal = func(execState, addFunctionInfo->param);
+    //增加名称 haipe 2018-12-4 回调
+    jsValue retVal = func(addFunctionInfo->name, execState, addFunctionInfo->param);
 
     v8::Local<v8::Value> rv = getV8Value(retVal, context);
     info.GetReturnValue().Set(rv);
@@ -1353,7 +1359,7 @@ static void addFunction(v8::Local<v8::Context> context, const char* name, wkeJsN
 
     v8::Local<v8::Object> object = context->Global();
     v8::Local<v8::FunctionTemplate> tmpl = v8::FunctionTemplate::New(isolate);    
-    v8::Local<v8::Value> data = v8::External::New(isolate, new AddFunctionInfo(nativeFunction, param));
+    v8::Local<v8::Value> data = v8::External::New(isolate, new AddFunctionInfo(name, nativeFunction, param));
 
     // Set the function handler callback.
     tmpl->SetCallHandler(functionCallbackImpl, data);
@@ -1381,14 +1387,17 @@ public:
     void* setterParam;
 
     jsData* jsDataObj;
+    char name[MAX_NAME_LENGTH];	//增加名称 haipe 2018-12-4 以便回调
 
-    void set(wkeJsNativeFunction getter, void* getterParam, wkeJsNativeFunction setter, void* setterParam)
+    void set(const char* name, wkeJsNativeFunction getter, void* getterParam, wkeJsNativeFunction setter, void* setterParam) 
     {
         this->getter = getter;
         this->getterParam = getterParam;
         this->setter = setter;
         this->setterParam = setterParam;
         this->jsDataObj = nullptr;
+
+        strncpy(this->name, name, MAX_NAME_LENGTH - 1); //增加名称 haipe 2018-12-4 以便回调
     }
 
     void set(jsData* jsDataObj)
@@ -1419,7 +1428,7 @@ public:
         execState->context.Reset(isolate, isolate->GetCurrentContext());
 
         wke::AutoDisableFreeV8TempObejct autoDisableFreeV8TempObejct;
-        jsValue retJsValue = getterSetter->getter(execState, getterSetter->getterParam);
+        jsValue retJsValue = getterSetter->getter(getterSetter->name, execState, getterSetter->getterParam);
 
         info.GetReturnValue().Set(getV8Value(retJsValue, isolate->GetCurrentContext()));
     }
@@ -1437,7 +1446,7 @@ public:
         execState->context.Reset(isolate, isolate->GetCurrentContext());
 
         wke::AutoDisableFreeV8TempObejct autoDisableFreeV8TempObejct;
-        getterSetter->setter(execState, getterSetter->setterParam);
+        getterSetter->setter(getterSetter->name, execState, getterSetter->setterParam);
 
         info.GetReturnValue().SetUndefined();
     }
@@ -1524,7 +1533,7 @@ static void addAccessor(v8::Local<v8::Context> context, const char* name, wkeJsN
         return;
 
     NativeGetterSetterWrap* wrap = NativeGetterSetterWrap::createWrapAndAddToGlobalObjForRelease(isolate, globalObj);
-    wrap->set(getter, getterParam, setter, setterParam);
+    wrap->set(name, getter, getterParam, setter, setterParam);
     v8::Local<v8::Value> data = v8::External::New(isolate, wrap);
 
     v8::AccessorNameGetterCallback v8Getter = getter ? &NativeGetterSetterWrap::AccessorGetterCallbackImpl : nullptr;
@@ -1534,7 +1543,7 @@ static void addAccessor(v8::Local<v8::Context> context, const char* name, wkeJsN
 }
 
 
-#define MAX_NAME_LENGTH 1024
+//#define MAX_NAME_LENGTH 1024      //调整到前面了 haipe 2018-12-4
 #define MAX_FUNCTION_COUNT 1024
 
 #define JS_FUNC   (0)
@@ -1570,10 +1579,10 @@ struct jsFunctionInfo {
 
 static Vector<jsFunctionInfo>* s_jsFunctionsPtr = nullptr;
 
-static jsValue wkeJsBindFunctionWrap(jsExecState es, void* param)
+static jsValue wkeJsBindFunctionWrap(const char* name, jsExecState es, void* param)
 {
     jsNativeFunction fn = (jsNativeFunction)param;
-    return fn(es);
+    return fn(name, es);
 }
 
 void jsBindFunction(const char* name, jsNativeFunction fn, unsigned int argCount)
@@ -1661,7 +1670,7 @@ void wkeJsBindSetter(const char* name, wkeJsNativeFunction fn, void* param)
     wkeJsBindSetterGetter(name, fn, param, JS_GETTER);
 }
 
-jsValue js_outputMsg(jsExecState es, void* param)
+jsValue js_outputMsg(const char* fname, jsExecState es, void* param) //增加名称 haipe 2018-12-04
 {
     if (jsArgCount(es) != 1 || jsArgType(es, 0) != JSTYPE_STRING)
         return jsUndefined();
@@ -1672,13 +1681,13 @@ jsValue js_outputMsg(jsExecState es, void* param)
     return jsUndefined();
 }
 
-jsValue js_getWebViewName(jsExecState es, void* param)
+jsValue js_getWebViewName(const char* fname, jsExecState es, void* param)  //增加名称 haipe 2018-12-04
 {
     wkeWebView webView = jsGetWebView(es);
     return jsString(es, webView->name());
 }
 
-jsValue js_setWebViewName(jsExecState es, void* param)
+jsValue js_setWebViewName(const char* fname, jsExecState es, void* param) //增加名称 haipe 2018-12-04
 {
     const char* name = jsToTempString(es, jsArg(es, 0));
     wkeWebView webView = jsGetWebView(es);

@@ -715,9 +715,9 @@ WKE_API void wkeSetWindowTitleW(wkeWebView webWindow, const wchar_t* title);
 
 //JavaScript Bind-----------------------------------------------------------------------------------
 #define JS_CALL __fastcall
-typedef jsValue(JS_CALL* jsNativeFunction) (jsExecState es);
+typedef jsValue(JS_CALL* jsNativeFunction) (const char* name, jsExecState es); //haipe add name ,bind js function name
 
-typedef jsValue(* wkeJsNativeFunction) (jsExecState es, void* param);
+typedef jsValue(*wkeJsNativeFunction) (const char* name, jsExecState es, void* param); //haipe add name ,bind js function name
 
 typedef enum {
     JSTYPE_NUMBER,
