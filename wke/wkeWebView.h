@@ -22,6 +22,7 @@ namespace net {
 class WebCookieJarImpl;
 }
 
+typedef void CURL;
 typedef void CURLSH;
 
 namespace wke {
@@ -72,6 +73,9 @@ struct CWebViewHandler {
     wkeDownloadCallback downloadCallback;
     void* downloadCallbackParam;
 
+    wkeDownload2Callback download2Callback;
+    void* download2CallbackParam;
+
     wkeNetResponseCallback netResponseCallback;
     void* netResponseCallbackParam;
 
@@ -107,13 +111,16 @@ struct CWebViewHandler {
 
     wkeStartDraggingCallback startDraggingCallback;
     void* startDraggingCallbackParam;
+
+    wkeOnPrintCallback printCallback;
+    void* printCallbackParam;
     
     bool isWke; // 是否是使用的wke接口
 };
 
 class CWebView : public IWebView {
 public:
-    CWebView();
+    CWebView(COLORREF color);
     virtual ~CWebView();
 
     virtual bool create();
@@ -146,13 +153,13 @@ public:
 	  void setUserAgent(const utf8 * useragent);
     void setUserAgent(const wchar_t * useragent);
     
-    bool isLoading() const;
-    bool isLoadingSucceeded() const;
-    bool isLoadingFailed() const;
+    virtual bool isLoading() const override;
+    virtual bool isLoadingSucceeded() const override;
+    virtual bool isLoadingFailed() const override;
     bool isLoadingCompleted() const;
     virtual bool isDocumentReady() const override;
-    void stopLoading();
-    void reload();
+    virtual void stopLoading() override;
+    virtual void reload() override;
     void goToOffset(int offset);
     void goToIndex(int index);
 
@@ -258,6 +265,8 @@ public:
     virtual void onDocumentReady(wkeDocumentReadyCallback callback, void* callbackParam);
     void onDocumentReady2(wkeDocumentReady2Callback callback, void* callbackParam);
     virtual void onDownload(wkeDownloadCallback callback, void* callbackParam);
+    void onDownload2(wkeDownload2Callback callback, void* callbackParam);
+    
     virtual void onConsole(wkeConsoleCallback callback, void* callbackParam);
     virtual void onCallUiThread(wkeCallUiThread callback, void* callbackParam);
     void onNetResponse(wkeNetResponseCallback callback, void* callbackParam);
@@ -270,6 +279,8 @@ public:
 
     void onStartDragging(wkeStartDraggingCallback callback, void* callbackParam);
     
+    void onPrint(wkeOnPrintCallback callback, void* param);
+
     void onOtherLoad(wkeOnOtherLoadCallback callback, void* callbackParam);
 
     void onDraggableRegionsChanged(wkeDraggableRegionsChangedCallback callback, void* param);
@@ -301,8 +312,10 @@ public:
 
     CURLSH* getCurlShareHandle();
     std::string getCookieJarPath();
-    void setCookieJarPath(const utf8* path);
+    void setCookieJarFullPath(const utf8* path);
     net::WebCookieJarImpl* getCookieJar();
+
+    void setLocalStorageFullPath(const utf8* path);
 
     std::set<jsValue>& getPersistentJsValue() { return m_persistentJsValue; }
 
@@ -313,7 +326,7 @@ protected:
 
     HWND m_hWnd;
     void _initHandler();
-    void _initPage();
+    void _initPage(COLORREF color);
     void _initMemoryDC();
 
     void _loadURL(const utf8* inUrl, bool isFile);

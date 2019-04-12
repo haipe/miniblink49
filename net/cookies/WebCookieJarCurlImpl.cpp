@@ -2,20 +2,16 @@
 #include <windows.h>
 
 #include "net/cookies/WebCookieJarCurlImpl.h"
-
-#define CURL_STATICLIB 
-#include "third_party/libcurl/include/curl/curl.h"
-
 #include "net/WebURLLoaderManager.h"
 #include "net/WebURLLoaderInternal.h"
 #include "net/WebURLLoaderManagerUtil.h"
-
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/wtf/text/WTFStringUtil.h"
 #include "third_party/WebKit/Source/wtf/DateMath.h"
 #include "third_party/WebKit/Source/wtf/HashMap.h"
 #include "third_party/WebKit/Source/wtf/text/StringBuilder.h"
 #include "third_party/WebKit/Source/wtf/text/StringHash.h"
+#include "third_party/libcurl/include/curl/curl.h"
 
 namespace net {
 
@@ -153,14 +149,47 @@ static void addMatchingCurlCookie(const char* cookie, const String& domain, cons
     cookies.append(strValue);
 }
 
+const char replaceEqualSing = (char)0x6;
+
+static String fixEqualSignInValue(Vector<char>* value)
+{
+    bool isOver = false;
+    for (size_t i = 0; i < value->size() && !isOver; ++i) {
+        char c = value->at(i);
+        if ('\"' != c)
+            continue;
+        
+        for (size_t j = i + 1; j < value->size(); ++j) {
+            c = value->at(j);
+            if ('=' == c) {
+                value->at(j) = replaceEqualSing;
+            } else if ('\"' == c) {
+                isOver = true;
+                break;
+            }
+        }
+    }
+    return String(value->data(), value->size());
+}
+
+static String restoreEqualSignInValue(const String& value)
+{
+    Vector<LChar> result;
+    for (size_t i = 0; i < value.length(); ++i) {
+        LChar c = value[i];
+        result.append(replaceEqualSing == c ? '=' : c);
+    }
+    return String::adopt(result);
+}
+
 static String getNetscapeCookieFormat(const KURL& url, const String& value)
 {
     // Constructs a cookie string in Netscape Cookie file format.
-
     if (value.isEmpty())
         return "";
 
-    String valueStr = WTF::ensureStringToUTF8String(value);
+    Vector<char> valueBuf = ensureStringToUTF8(value, false);
+    String valueStr = fixEqualSignInValue(&valueBuf);
 
     Vector<String> attributes;
     valueStr.split(';', false, attributes);
@@ -242,7 +271,7 @@ static String getNetscapeCookieFormat(const KURL& url, const String& value)
     cookieStr.append(secure + "\t");
     cookieStr.append(expiresStr + "\t");
     cookieStr.append(cookieName + "\t");
-    cookieStr.append(cookieValue);
+    cookieStr.append(restoreEqualSignInValue(cookieValue));
 
     return cookieStr.toString();
 }

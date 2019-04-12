@@ -63,7 +63,7 @@ class WebPageImpl
     , public cc::LayerTreeHostClent
     , public PopupMenuWinClient {
 public:
-    WebPageImpl();
+    WebPageImpl(COLORREF bdColor);
     ~WebPageImpl();
 
     class DestroyNotif {
@@ -101,6 +101,9 @@ public:
     virtual void initializeLayerTreeView() override;
     virtual blink::WebWidget* createPopupMenu(blink::WebPopupType) override;
     virtual blink::WebStorageNamespace* createSessionStorageNamespace() override;
+#ifndef MINIBLINK_NO_PAGE_LOCALSTORAGE
+    virtual blink::WebStorageNamespace* createLocalStorageNamespace() override;
+#endif
     virtual blink::WebString acceptLanguages() override;
     void setScreenInfo(const blink::WebScreenInfo& info);
     virtual blink::WebScreenInfo screenInfo() override;
@@ -108,6 +111,7 @@ public:
     virtual void setToolTipText(const blink::WebString&, blink::WebTextDirection hint) override;
     virtual void draggableRegionsChanged() override;
     virtual void onMouseDown(const blink::WebNode& mouseDownNode) override;
+    virtual void printPage(blink::WebLocalFrame* frame) override;
 
     // Editing --------------------------------------------------------
     virtual bool handleCurrentKeyboardEvent() override;
@@ -211,7 +215,7 @@ public:
     void setBrowser(CefBrowserHostImpl* browser);
 #endif
     blink::WebFrame* getWebFrameFromFrameId(int64_t frameId);
-    int64_t getFrameIdByBlinkFrame(const blink::WebFrame* frame);
+    static int64_t getFrameIdByBlinkFrame(const blink::WebFrame* frame);
     static int64_t getFirstFrameId();
 
     blink::WebView* createWkeView(blink::WebLocalFrame* creator,
@@ -247,7 +251,10 @@ public:
     bool m_isDragging;
     bool m_isFirstEnterDrag;
 
-    void setCookieJarPath(const char* path);
+    void setBackgroundColor(COLORREF c);
+
+    void setCookieJarFullPath(const char* path);
+    void setLocalStorageFullPath(const char* path);
     RefPtr<net::PageNetExtraData> m_pageNetExtraData;
 
     static int64_t m_firstFrameId;

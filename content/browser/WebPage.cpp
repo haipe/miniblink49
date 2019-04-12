@@ -61,6 +61,7 @@ WebPage::WebPage(void* foreignPtr)
     m_wkeHandler = new wke::CWebViewHandler();
     memset(m_wkeHandler, 0, sizeof(wke::CWebViewHandler));
 #endif
+    m_isContextMenuEnable = true;
 }
 
 WebPage::~WebPage()
@@ -77,9 +78,9 @@ WebPage::~WebPage()
     m_webPageSet->remove(this);
 }
 
-bool WebPage::init(HWND hWnd)
+bool WebPage::init(HWND hWnd, COLORREF color)
 {
-    m_pageImpl = new WebPageImpl();
+    m_pageImpl = new WebPageImpl(color);
     m_pageImpl->init(this, hWnd);
     
     return true;
@@ -174,6 +175,16 @@ void WebPage::enablePaint()
 {
     if (m_pageImpl)
         m_pageImpl->enablePaint();
+}
+
+void WebPage::setContextMenuEnabled(bool b)
+{
+    m_isContextMenuEnable = b;
+}
+
+bool WebPage::getContextMenuEnabled() const
+{
+    return m_isContextMenuEnable;
 }
 
 void WebPage::willEnterDebugLoop()
@@ -401,7 +412,7 @@ void WebPage::loadHTMLString(int64 frameId, const WebData& html, const WebURL& b
 
 void WebPage::setBackgroundColor(COLORREF c) {
     if (m_pageImpl)
-        m_pageImpl->m_bdColor = c;
+        m_pageImpl->setBackgroundColor(c);
 }
 
 #if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
@@ -492,10 +503,16 @@ PassRefPtr<net::PageNetExtraData> WebPage::getPageNetExtraData()
     return nullptr;
 }
 
-void WebPage::setCookieJarPath(const char* path)
+void WebPage::setCookieJarFullPath(const char* path)
 {
     if (m_pageImpl)
-        return m_pageImpl->setCookieJarPath(path);
+        return m_pageImpl->setCookieJarFullPath(path);
+}
+
+void WebPage::setLocalStorageFullPath(const char* path)
+{
+    if (m_pageImpl)
+        return m_pageImpl->setLocalStorageFullPath(path);
 }
 
 WebPage* WebPage::getSelfForCurrentContext()

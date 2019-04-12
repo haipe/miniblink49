@@ -360,6 +360,8 @@ void WebPluginImpl::updatePluginWidget(const IntRect& windowRect, const IntRect&
             ::DeleteObject(rgn);
         }
 
+        setNPWindowRect(windowRect);
+
         setCallingPlugin(false);
 
         m_haveUpdatedPluginWidget = true;
@@ -615,6 +617,8 @@ bool WebPluginImpl::handleMouseEvent(const blink::WebMouseEvent& evt)
                 break;
             case blink::WebMouseEvent::Button::ButtonRight:
                 npEvent.wParam |= MK_RBUTTON;
+                break;
+            case blink::WebMouseEvent::Button::ButtonNone:
                 break;
             }
         }
@@ -1058,7 +1062,7 @@ void WebPluginImpl::platformStartImpl(bool isSync)
     }
 }
 
-#define USING_ASYNC_START 1
+#define USING_ASYNC_START 0
 
 void WebPluginImpl::PlatformStartAsynTask::didProcessTask()
 {

@@ -115,7 +115,9 @@ LayerTreeHost::~LayerTreeHost()
         int waitCount = 1;
         blink::WebThreadSupportingGC* webThread = m_compositeThread.leakPtr();
         webThread->platformThread().postTask(FROM_HERE, WTF::bind(&shutdownCompositeThread, webThread, &waitCount));
-        while (waitCount) {}
+        while (waitCount) {
+            ::Sleep(100);
+        }
         delete webThread;
     }
 
@@ -567,7 +569,7 @@ bool LayerTreeHost::drawToCanvas(SkCanvas* canvas, const SkRect& dirtyRect)
     bool b = false;
     WTF::Locker<WTF::Mutex> locker(m_rootCCLayerMutex);
     if (getRootCCLayer())
-        b = m_rootCCLayer->drawToCanvasChildren(this, canvas, dirtyRect, 0);
+        b = m_rootCCLayer->drawToCanvasChildren(this, canvas, dirtyRect, 1, 0);
 
     canvas->restore();
 
@@ -997,8 +999,10 @@ void LayerTreeHost::firePaintEvent(HDC hdc, const RECT* paintRect)
 
     if (!m_hasTransparentBackground)
         skia::DrawToNativeContext(m_memoryCanvas, hdc, paintRect->left, paintRect->top, paintRect);
-    else
-        skia::DrawToNativeLayeredContext(m_memoryCanvas, hdc, paintRect, &intRectToWinRect(m_clientRect));
+    else {
+        RECT rc = blink::intRectToWinRect(m_clientRect);
+        skia::DrawToNativeLayeredContext(m_memoryCanvas, hdc, paintRect, &rc);
+    }
 }
 
 void LayerTreeHost::drawFrameInCompositeThread()
