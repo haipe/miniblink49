@@ -500,6 +500,9 @@ extern "C" NODE_EXTERN void node_module_register(void* mod);
  */
 NODE_EXTERN void AtExit(void (*cb)(void* arg), void* arg = 0);
 
+NODE_EXTERN void AddEnvironmentCleanupHook(v8::Isolate* isolate, void(*fun)(void* arg), void* arg);
+NODE_EXTERN void RemoveEnvironmentCleanupHook(v8::Isolate* isolate, void(*fun)(void* arg), void* arg);
+
 }  // namespace node
 
 #endif  // SRC_NODE_H_

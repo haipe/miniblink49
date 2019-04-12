@@ -339,7 +339,8 @@ WKE_API const utf8* wkeGetCookie(wkeWebView webView);
 //     wkeCookieList* next;
 // };
 // WKE_API const wkeCookieList* wkeGetAllCookie();
-// WKE_API void wkeFreeCookieList(const wkeCookieList* cookieList);
+// WKE_API void wkeFreeCookieList(const wkeCookieList* cookieList);
+
 typedef bool(*wkeCookieVisitor)(
     void* params,
     const char* name, 
@@ -554,7 +555,7 @@ typedef void(*wkeCallUiThread)(wkeWebView webView, wkeOnCallUiThread func, void*
 WKE_API void wkeSetUIThreadCallback(wkeWebView webView, wkeCallUiThread callback, void* param);
 
 //wkeNet--------------------------------------------------------------------------------------
-typedef bool(*wkeLoadUrlBeginCallback)(wkeWebView webView, void* param, const char* url, void* job);
+typedef void(*wkeLoadUrlBeginCallback)(wkeWebView webView, void* param, const char* url, void* job);
 WKE_API void wkeOnLoadUrlBegin(wkeWebView webView, wkeLoadUrlBeginCallback callback, void* callbackParam);
 
 typedef void(*wkeLoadUrlEndCallback)(wkeWebView webView, void* param, const char *url, void* job, void* buf, int len);

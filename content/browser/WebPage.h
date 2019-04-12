@@ -63,7 +63,7 @@ public:
 
     WebPageState getState() const;
 
-    bool init(HWND hWnd);
+    bool init(HWND hWnd, COLORREF color);
 
     void close();
 
@@ -141,6 +141,9 @@ public:
     void disablePaint();
     void enablePaint();
 
+    void setContextMenuEnabled(bool b);
+    bool getContextMenuEnabled() const;
+
     void willEnterDebugLoop();
     void didExitDebugLoop();
 
@@ -161,7 +164,8 @@ public:
     static WebPage* getSelfForCurrentContext();
 
     PassRefPtr<net::PageNetExtraData> getPageNetExtraData();
-    void setCookieJarPath(const char* path);
+    void setCookieJarFullPath(const char* path);
+    void setLocalStorageFullPath(const char* path);
 
     WebFrameClientImpl* webFrameClientImpl();
 
@@ -195,6 +199,8 @@ protected:
 #endif
     WebPageImpl* m_pageImpl;
     static WTF::HashSet<WebPage*>* m_webPageSet;
+
+    bool m_isContextMenuEnable;
 };
 
 } // namespace content

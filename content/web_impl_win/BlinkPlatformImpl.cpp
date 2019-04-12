@@ -1,6 +1,5 @@
 
 #include "config.h"
-#include "base/rand_util.h"
 #include "content/web_impl_win/BlinkPlatformImpl.h"
 #include "content/web_impl_win/WebThreadImpl.h"
 #include "content/web_impl_win/WebURLLoaderImpl.h"
@@ -21,14 +20,12 @@
 #include "content/resources/LocalizedString.h"
 #include "content/resources/WebKitWebRes.h"
 #include "content/resources/MediaPlayerData.h"
-
 #include "content/browser/WebPage.h"
 #include "content/browser/PlatformMessagePortChannel.h"
 #include "cc/blink/WebCompositorSupportImpl.h"
 #include "cc/raster/RasterTask.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/Source/core/fetch/MemoryCache.h"
-#include "third_party/WebKit/Source/web/WebStorageNamespaceImpl.h"
 #include "third_party/WebKit/public/platform/WebScrollbarBehavior.h"
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
 #include "third_party/WebKit/Source/platform/WebThreadSupportingGC.h"
@@ -49,7 +46,10 @@
 #include "gin/public/isolate_holder.h"
 #include "gin/array_buffer.h"
 #include "net/WebURLLoaderManager.h"
+#include "net/WebStorageNamespaceImpl.h"
 #include "wke/wkeUtil.h"
+#include "base/rand_util.h"
+#include "base/values.h"
 #include <crtdbg.h>
 
 DWORD g_paintToMemoryCanvasInUiThreadCount = 0;
@@ -151,7 +151,7 @@ public:
     ~DOMStorageMapWrap()
     {
     }
-    blink::DOMStorageMap map;
+    net::DOMStorageMap map;
 };
 
 DWORD sCurrentThreadTlsKey = -1;
@@ -179,6 +179,9 @@ static void setRuntimeEnabledFeatures()
     blink::RuntimeEnabledFeatures::setCspCheckEnabled(true);
     blink::RuntimeEnabledFeatures::setNpapiPluginsEnabled(true);
     blink::RuntimeEnabledFeatures::setDOMConvenienceAPIEnabled(true);
+    blink::RuntimeEnabledFeatures::setTextBlobEnabled(true);
+	blink::RuntimeEnabledFeatures::setCssVariablesEnabled(true);
+	blink::RuntimeEnabledFeatures::setCSSMotionPathEnabled(true);
 }
 
 void BlinkPlatformImpl::initialize()
@@ -353,7 +356,7 @@ void BlinkPlatformImpl::shutdown()
 
     cc::RasterTaskWorkerThreadPool* rasterPool = cc::RasterTaskWorkerThreadPool::shared();
     rasterPool->shutdown();
-
+ 
     SkGraphics::PurgeResourceCache();
     SkGraphics::PurgeFontCache();
     SkGraphics::Term();
@@ -440,7 +443,7 @@ BlinkPlatformImpl::AutoDisableGC::~AutoDisableGC()
 
 void BlinkPlatformImpl::resourceGarbageCollectedTimer(blink::Timer<BlinkPlatformImpl>*)
 {
-    blink::memoryCache()->evictResources();
+    doGarbageCollected();
 }
 
 void BlinkPlatformImpl::garbageCollectedTimer(blink::Timer<BlinkPlatformImpl>*)
@@ -628,7 +631,7 @@ blink::WebString BlinkPlatformImpl::userAgent()
 
 const char* BlinkPlatformImpl::getUserAgent()
 {
-    const char* defaultUA = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.2171.99 Safari/537.36";
+    const char* defaultUA = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3489.1 Safari/537.36";
     BlinkPlatformImpl* self = (BlinkPlatformImpl*)blink::Platform::current();
     if (!self)
         return defaultUA;
@@ -640,24 +643,6 @@ void BlinkPlatformImpl::setUserAgent(const char* ua)
     if (m_userAgent)
         delete m_userAgent;
     m_userAgent = new std::string(ua);
-}
-
-void readJsFile(const wchar_t* path, std::vector<char>* buffer)
-{
-    HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (INVALID_HANDLE_VALUE == hFile) {
-        DebugBreak();
-        return;
-    }
-
-    DWORD fileSizeHigh;
-    const DWORD bufferSize = ::GetFileSize(hFile, &fileSizeHigh);
-
-    DWORD numberOfBytesRead = 0;
-    buffer->resize(bufferSize);
-    BOOL b = ::ReadFile(hFile, &buffer->at(0), bufferSize, &numberOfBytesRead, nullptr);
-    ::CloseHandle(hFile);
-    b = b;
 }
 
 blink::WebData BlinkPlatformImpl::loadResource(const char* name)
@@ -846,16 +831,21 @@ blink::WebURLError BlinkPlatformImpl::cancelledError(const blink::WebURL& url) c
 
 blink::WebStorageNamespace* BlinkPlatformImpl::createLocalStorageNamespace()
 {
+#ifndef MINIBLINK_NO_PAGE_LOCALSTORAGE
+    RELEASE_ASSERT(false);
+    return nullptr;
+#else
     if (!m_localStorageStorageMap)
         m_localStorageStorageMap = new DOMStorageMapWrap();
-    return new blink::WebStorageNamespaceImpl(blink::kLocalStorageNamespaceId, &m_localStorageStorageMap->map, true);
+    return new blink::WebStorageNamespaceImpl("", blink::kLocalStorageNamespaceId, &m_localStorageStorageMap->map, true);
+#endif
 }
 
 blink::WebStorageNamespace* BlinkPlatformImpl::createSessionStorageNamespace()
 {
     if (!m_sessionStorageStorageMap)
         m_sessionStorageStorageMap = new DOMStorageMapWrap();
-    return new blink::WebStorageNamespaceImpl(m_storageNamespaceIdCount++, &m_sessionStorageStorageMap->map, false);
+    return new net::WebStorageNamespaceImpl("", m_storageNamespaceIdCount++, &m_sessionStorageStorageMap->map, false);
 }
 
 bool BlinkPlatformImpl::portAllowed(const blink::WebURL&) const
@@ -917,6 +907,7 @@ void BlinkPlatformImpl::getPluginList(bool refresh, blink::WebPluginListBuilder*
         String name = package->name();
         String desc = package->description();
         String file = package->fileName();
+
         builder->addPlugin(name, desc, file);
 
         const MIMEToDescriptionsMap& mimeToDescriptions = package->mimeToDescriptions();
@@ -925,6 +916,20 @@ void BlinkPlatformImpl::getPluginList(bool refresh, blink::WebPluginListBuilder*
         for (MIMEToDescriptionsMap::const_iterator it = mimeToDescriptions.begin(); it != end; ++it) {
             String type = it->key;
             String desc = it->value;
+
+            // third_party\WebKit\Source\core\dom\DOMImplementation.cpp会询问
+            // third_party\WebKit\Source\platform\plugins\PluginData.cpp 里得到的插件mime是否有支持的，有的话就创建PluginDocument
+            if (desc.startsWith("application/virtual-plugin-")) {
+                if (!package->load())
+                    continue;
+
+                NPError npErr = package->pluginFuncs()->newp((NPMIMEType)"application/pdf", nullptr, 0, 0, nullptr, nullptr, nullptr);
+                if (NPERR_NO_ERROR != npErr)
+                    continue;
+                type = "application/pdf";
+                desc = "pdfviewer";
+            }
+
             builder->addMediaTypeToLastPlugin(type, desc);
 
             Vector<String> extensions = package->mimeToExtensions().get(type);

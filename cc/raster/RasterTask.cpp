@@ -202,7 +202,8 @@ public:
         bool isOpaque,
         const cc_blink::WebFilterOperationsImpl* filterOperations,
         LayerChangeActionBlend* blendAction,
-        RasterTaskGroup* group
+        RasterTaskGroup* group,
+        SkColor backgroudColor
         )
         : m_pool(pool)
         , m_picture(picture)
@@ -213,6 +214,7 @@ public:
         , m_group(group)
         , m_filterOperations(filterOperations ? new cc_blink::WebFilterOperationsImpl(*filterOperations) : nullptr)
         , m_contentScale(wke::g_contentScale)
+        , m_backgroudColor(backgroudColor)
     {
 #ifndef NDEBUG
         rasterTaskCounter.increment();
@@ -256,12 +258,12 @@ public:
     virtual void run() override
     {
 
-        DWORD nowTime = (DWORD)(WTF::currentTimeMS() * 100);
+        //DWORD nowTime = (DWORD)(WTF::currentTimeMS() * 100);
         raster();
         releaseRource();
         g_rasterTaskCount++;
 
-        DWORD nowTime2 = (DWORD)(WTF::currentTimeMS() * 100);
+        //DWORD nowTime2 = (DWORD)(WTF::currentTimeMS() * 100);
         
 //         String output = String::format("RasterTask.run: %d\n", nowTime2 - nowTime);
 //         OutputDebugStringA(output.utf8().data());
@@ -339,7 +341,7 @@ public:
 
         // Uses kPremul_SkAlphaType since the result is not known to be opaque.
         SkImageInfo info = SkImageInfo::MakeN32(dirtyRect.width(), dirtyRect.height(), m_isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType); // TODO
-        SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
+        SkSurfaceProps surfaceProps(0, wke::g_smootTextEnable ? kRGB_H_SkPixelGeometry : kUnknown_SkPixelGeometry);
         size_t stride = info.minRowBytes();
         skia::RefPtr<SkSurface> surface = skia::AdoptRef(SkSurface::NewRasterDirect(info, bitmap->getPixels(), stride, &surfaceProps));
         skia::RefPtr<SkCanvas> canvas = skia::SharePtr(surface->getCanvas());
@@ -348,7 +350,10 @@ public:
         paint.setAntiAlias(false);
 
         if (!m_isOpaque)
-            bitmap->eraseARGB(0, 0xff, 0xff, 0xff); // TODO
+            bitmap->eraseARGB(0, 0xff, 0xff, 0xff);
+
+//         if ((m_backgroudColor & 0xff000000) != 0xffffff)
+//             bitmap->eraseColor(m_backgroudColor);
 
         canvas->save();
         canvas->scale(m_contentScale, m_contentScale);
@@ -400,6 +405,7 @@ private:
     bool m_isOpaque;
     RasterTaskGroup* m_group;
     const cc_blink::WebFilterOperationsImpl* m_filterOperations;
+    SkColor m_backgroudColor;
 
     float m_contentScale; // 绘制低分辨率的时候用
 };
@@ -462,7 +468,7 @@ int64 RasterTaskGroup::postRasterTask(cc_blink::WebLayerImpl* layer, SkPicture* 
 
     int threadIndex = m_pool->selectOneIdleThread();
 
-    RasterTask* task = new RasterTask(m_pool, picture, dirtyRect, threadIndex, layer->opaque(), layer->getFilters(), blendAction, this);
+    RasterTask* task = new RasterTask(m_pool, picture, dirtyRect, threadIndex, layer->opaque(), layer->getFilters(), blendAction, this, m_host->getBackgroundColor());
     m_pool->increasePendingRasterTaskNum();
     m_pool->increaseBusyCountByIndex(task->threadIndex());
     m_pool->m_threads[task->threadIndex()]->postTask(FROM_HERE, task);

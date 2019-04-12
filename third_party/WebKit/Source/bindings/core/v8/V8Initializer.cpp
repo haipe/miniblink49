@@ -146,7 +146,7 @@ static void messageHandlerInMainThread(v8::Local<v8::Message> message, v8::Local
     LocalDOMWindow* enteredWindow = enteredDOMWindow(isolate);
     if (!enteredWindow || !enteredWindow->isCurrentlyDisplayedInFrame())
         return;
-
+    
     int scriptId = 0;
     RefPtrWillBeRawPtr<ScriptCallStack> callStack = extractCallStack(isolate, message, &scriptId);
     String resourceName = extractResourceName(message, enteredWindow->document());
@@ -242,8 +242,11 @@ static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
     String resourceName;
     String errorMessage;
     RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
-
+#if V8_MAJOR_VERSION > 5
+    v8::Local<v8::Message> message = v8::Exception::CreateMessage(isolate, exception);
+#else
     v8::Local<v8::Message> message = v8::Exception::CreateMessage(exception);
+#endif
     if (!message.IsEmpty()) {
         if (v8Call(message->GetLineNumber(isolate->GetCurrentContext()), lineNumber)
             && v8Call(message->GetStartColumn(isolate->GetCurrentContext()), columnNumber))
@@ -295,7 +298,11 @@ static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage data)
     String resourceName;
     String errorMessage;
 
-    v8::Local<v8::Message> message = v8::Exception::CreateMessage(data.GetValue());
+#if V8_MAJOR_VERSION > 5
+    v8::Local<v8::Message> message = v8::Exception::CreateMessage(isolate, exception);
+#else
+    v8::Local<v8::Message> message = v8::Exception::CreateMessage(exception);
+#endif
     if (!message.IsEmpty()) {
         TOSTRING_VOID(V8StringResource<>, resourceName, message->GetScriptOrigin().ResourceName());
         scriptId = message->GetScriptOrigin().ScriptID()->Value();
