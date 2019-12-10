@@ -180,9 +180,11 @@ static void setRuntimeEnabledFeatures()
     blink::RuntimeEnabledFeatures::setNpapiPluginsEnabled(true);
     blink::RuntimeEnabledFeatures::setDOMConvenienceAPIEnabled(true);
     blink::RuntimeEnabledFeatures::setTextBlobEnabled(true);
-	blink::RuntimeEnabledFeatures::setCssVariablesEnabled(true);
-	blink::RuntimeEnabledFeatures::setCSSMotionPathEnabled(true);
+    blink::RuntimeEnabledFeatures::setCssVariablesEnabled(true);
+    blink::RuntimeEnabledFeatures::setCSSMotionPathEnabled(true);
 }
+
+typedef BOOL (WINAPI* PFN_SetThreadStackGuarantee)(PULONG StackSizeInBytes);
 
 void BlinkPlatformImpl::initialize()
 {
@@ -190,6 +192,11 @@ void BlinkPlatformImpl::initialize()
     scrt_initialize_thread_safe_statics();
 #endif
     x86_check_features();
+    //_control87(0x133f, 0xffff);
+
+//     ULONG stackSizeInBytes = 894 * 1024;
+//     PFN_SetThreadStackGuarantee pSetThreadStackGuarantee = (PFN_SetThreadStackGuarantee)::GetProcAddress(::GetModuleHandleW(L"Kernel32.dll"), "SetThreadStackGuarantee");
+//     pSetThreadStackGuarantee(&stackSizeInBytes);
     
     ::CoInitializeEx(nullptr, 0); // COINIT_MULTITHREADED
     ::OleInitialize(nullptr);
@@ -221,8 +228,6 @@ void BlinkPlatformImpl::initialize()
     
 //     platform->m_perfTimer = new blink::Timer<BlinkPlatformImpl>(platform, &BlinkPlatformImpl::perfTimer);
 //     platform->m_perfTimer->start(2, 2, FROM_HERE);
-
-    //OutputDebugStringW(L"BlinkPlatformImpl::initBlink\n");
 }
 
 BlinkPlatformImpl::BlinkPlatformImpl() 
@@ -631,7 +636,7 @@ blink::WebString BlinkPlatformImpl::userAgent()
 
 const char* BlinkPlatformImpl::getUserAgent()
 {
-    const char* defaultUA = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3489.1 Safari/537.36";
+    const char* defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36";
     BlinkPlatformImpl* self = (BlinkPlatformImpl*)blink::Platform::current();
     if (!self)
         return defaultUA;
@@ -831,14 +836,9 @@ blink::WebURLError BlinkPlatformImpl::cancelledError(const blink::WebURL& url) c
 
 blink::WebStorageNamespace* BlinkPlatformImpl::createLocalStorageNamespace()
 {
-#ifndef MINIBLINK_NO_PAGE_LOCALSTORAGE
-    RELEASE_ASSERT(false);
-    return nullptr;
-#else
     if (!m_localStorageStorageMap)
         m_localStorageStorageMap = new DOMStorageMapWrap();
-    return new blink::WebStorageNamespaceImpl("", blink::kLocalStorageNamespaceId, &m_localStorageStorageMap->map, true);
-#endif
+    return new net::WebStorageNamespaceImpl("", net::kLocalStorageNamespaceId, &m_localStorageStorageMap->map, true);
 }
 
 blink::WebStorageNamespace* BlinkPlatformImpl::createSessionStorageNamespace()
