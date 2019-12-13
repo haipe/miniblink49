@@ -74,7 +74,6 @@
 #include "net/DiskCache.h"
 #include "net/cookies/WebCookieJarCurlImpl.h"
 #include "net/cookies/CookieJarMgr.h"
-#include "wke/wkeNetHook.h"
 #include "third_party/WebKit/Source/wtf/Threading.h"
 #include "third_party/WebKit/Source/wtf/Vector.h"
 #include "third_party/WebKit/Source/wtf/text/CString.h"
@@ -83,6 +82,7 @@
 #include <stdio.h>
 
 #if (defined ENABLE_WKE) && (ENABLE_WKE == 1)
+#include "wke/wkeNetHook.h"
 #include "wke/wkeWebView.h"
 #include "wke/wkeGlobalVar.h"
 #endif
@@ -249,6 +249,20 @@ void WebURLLoaderManager::appendDataToBlobCacheWhenDidDownloadData(blink::WebURL
     client->didDownloadData(loader, dataLength, encodedDataLength);
 }
 
+// https://rbt.guorenpcic.com/api/grecar/print/transcriptPrintNew?policyNo=6191515000518004167&loginComCode=151515HH&userCode=W1500227 pdf没有mime，强行设置
+static void parseMimeIfNeeded(WebURLLoaderManager* manager, WebURLLoaderInternal* job, const char* data, int dataLengt)
+{
+    String mime = job->m_response.mimeType();
+    if (!job->m_needParseMime || (!mime.isNull() && !mime.isEmpty()))
+        return;
+    job->m_needParseMime = false;
+
+    if (dataLengt > 6 && 0 == memcmp(data, "%PDF-", 5)) {
+        job->m_response.setMIMEType(blink::WebString::fromUTF8("application/pdf"));
+        manager->handleDidReceiveResponse(job);
+    }
+}
+
 void WebURLLoaderManager::didReceiveDataOrDownload(WebURLLoaderInternal* job, const char* data, int dataLength, int encodedDataLength)
 {
     blink::WebURLLoaderClient* client = job->client();
@@ -263,8 +277,10 @@ void WebURLLoaderManager::didReceiveDataOrDownload(WebURLLoaderInternal* job, co
     }
 
     if (!job->firstRequest()->downloadToFile()) {
-        if (WebURLLoaderInternal::kCacheForDownloadYes != job->m_cacheForDownloadOpt)
+        if (WebURLLoaderInternal::kCacheForDownloadYes != job->m_cacheForDownloadOpt) {
+            parseMimeIfNeeded(this, job, data, dataLength);
             client->didReceiveData(loader, data, dataLength, encodedDataLength);
+        }
         return;
     }
 
@@ -364,6 +380,16 @@ void WebURLLoaderManager::handleDidFail(WebURLLoaderInternal* job, const blink::
     setBlobDataLengthByTempPath(job);
     if (WebURLLoaderInternal::kCacheForDownloadYes != job->m_cacheForDownloadOpt)
         job->client()->didFail(job->loader(), error);
+
+    RequestExtraData* requestExtraData = reinterpret_cast<RequestExtraData*>(job->firstRequest()->extraData());
+    WebPage* page = requestExtraData->page;
+    if (page) {
+        wkeLoadUrlFailCallback loadUrlFailCallback = page->wkeHandler().loadUrlFailCallback;
+        void* loadUrlFailCallbackParam = page->wkeHandler().loadUrlFailCallbackParam;
+        Vector<char> urlBuf = WTF::ensureStringToUTF8(job->firstRequest()->url().string(), true);
+        if (loadUrlFailCallback)
+            loadUrlFailCallback(page->wkeWebView(), loadUrlFailCallbackParam, urlBuf.data(), job);
+    }
 }
 
 static void cancelBodyStreaming(int jobId)
@@ -436,7 +462,7 @@ static size_t writeCallbackOnIoThread(void* ptr, size_t size, size_t nmemb, void
     // of html page even if it is a redirect that was handled internally
     // can be observed e.g. on gmail.com
     long httpCode = 0;
-    CURLcode err = curl_easy_getinfo(job->m_handle, !job->m_isProxy ? CURLINFO_RESPONSE_CODE : CURLINFO_HTTP_CONNECTCODE, &httpCode);
+    CURLcode err = curl_easy_getinfo(job->m_handle, !job->m_isProxyConnect ? CURLINFO_RESPONSE_CODE : CURLINFO_HTTP_CONNECTCODE, &httpCode);
     if (CURLE_OK == err && httpCode >= 300 && httpCode < 400)
         return totalSize;
 
@@ -615,8 +641,10 @@ bool WebURLLoaderManager::downloadOnIoThread()
                 WebURLLoaderManagerMainTask::pushTask(jobId, WebURLLoaderManagerMainTask::TaskType::kDidFinishLoading, nullptr, 0, 0, 0);
             }
         } else {
-            char* url = 0;
+            char* url = nullptr;
             curl_easy_getinfo(job->m_handle, CURLINFO_EFFECTIVE_URL, &url);
+            if (!url)
+                url = "url is empty";
             if (job->client() && job->loader()) {
                 MainTaskArgs* args = WebURLLoaderManagerMainTask::pushTask(jobId, WebURLLoaderManagerMainTask::TaskType::kDidFail, nullptr, 0, 0, 0);
                 args->resourceError->reason = msg->data.result;
@@ -624,8 +652,10 @@ bool WebURLLoaderManager::downloadOnIoThread()
                 args->resourceError->unreachableURL = blink::KURL(blink::ParsedURLString, url);
                 args->resourceError->localizedDescription = blink::WebString::fromLatin1(curl_easy_strerror(msg->data.result));
 
-                String outString = String::format("kDidFail on io Thread:%d, %s\n", msg->data.result, url);
-                OutputDebugStringW(outString.charactersWithNullTermination().data());
+                char* output = (char*)malloc(0x300 + strlen(url));
+                sprintf(output, "kDidFail on io Thread:%d, %s\n", msg->data.result, url);          
+                OutputDebugStringA(output);
+                free(output);
             }
         }
         
@@ -1416,8 +1446,6 @@ InitializeHandleInfo* WebURLLoaderManager::preInitializeHandleOnMainThread(WebUR
     if (0 != wkeNetInterface.length()) {
         info->wkeNetInterface = wkeNetInterface.utf8().data();
     }
-    RefPtr<net::PageNetExtraData> pageNetExtraData = page->getPageNetExtraData();
-    info->pageNetExtraData = pageNetExtraData;
 #endif
 
     return info;
@@ -1454,12 +1482,7 @@ void WebURLLoaderManager::initializeHandleOnIoThread(int jobId, InitializeHandle
     curl_easy_setopt(job->m_handle, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(job->m_handle, CURLOPT_MAXREDIRS, 10);
     curl_easy_setopt(job->m_handle, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-
-    if (info->pageNetExtraData && info->pageNetExtraData->getCurlShareHandle()) {
-        curl_easy_setopt(job->m_handle, CURLOPT_SHARE, info->pageNetExtraData->getCurlShareHandle());
-        job->m_pageNetExtraData = info->pageNetExtraData;
-    } else
-        curl_easy_setopt(job->m_handle, CURLOPT_SHARE, m_shareCookieJar->getCurlShareHandle());
+    curl_easy_setopt(job->m_handle, CURLOPT_SHARE, m_shareCookieJar->getCurlShareHandle());
     curl_easy_setopt(job->m_handle, CURLOPT_DNS_CACHE_TIMEOUT, 60 * 5); // 5 minutes
     curl_easy_setopt(job->m_handle, CURLOPT_PROTOCOLS, kAllowedProtocols);
     curl_easy_setopt(job->m_handle, CURLOPT_REDIR_PROTOCOLS, kAllowedProtocols);
@@ -1483,11 +1506,7 @@ void WebURLLoaderManager::initializeHandleOnIoThread(int jobId, InitializeHandle
     WTF::Locker<WTF::Mutex> locker(*mutex);
 
     std::string cookieJarFullPath;
-    if (job->m_pageNetExtraData) {
-        cookieJarFullPath = job->m_pageNetExtraData->getCookieJarFullPath();
-    } else {
-        cookieJarFullPath = m_shareCookieJar->getCookieJarFullPath();
-    }
+    cookieJarFullPath = m_shareCookieJar->getCookieJarFullPath();
     
     if (!cookieJarFullPath.empty()) {
         curl_easy_setopt(job->m_handle, CURLOPT_COOKIEJAR, cookieJarFullPath.c_str());
@@ -1519,6 +1538,8 @@ void WebURLLoaderManager::initializeHandleOnIoThread(int jobId, InitializeHandle
 #if (defined ENABLE_WKE) && (ENABLE_WKE == 1)
     if (info->proxy.size()) {
         job->m_isProxy = true;
+        if(info->url.find("https") == 0)
+            job->m_isProxyConnect = true;
         curl_easy_setopt(job->m_handle, CURLOPT_PROXY, info->proxy.c_str());
         curl_easy_setopt(job->m_handle, CURLOPT_PROXYTYPE, info->proxyType);
     }  
@@ -1667,7 +1688,9 @@ WebURLLoaderInternal::WebURLLoaderInternal(WebURLLoaderImplCurl* loader, const W
     m_isBlackList = false;
     m_isDataUrl = false;
     m_isProxy = false;
+    m_isProxyConnect = false;
     m_isProxyHeadRequest = false;
+    m_needParseMime = true;
     m_isHoldJobToAsynCommit = false;
     m_isRedirection = false;
     m_initializeHandleInfo = nullptr;

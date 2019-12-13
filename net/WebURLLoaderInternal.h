@@ -45,7 +45,7 @@
 #include <memory>
 #include "third_party/libcurl/include/curl/curl.h"
 
-//#define MINIBLINK_NO_MULTITHREAD_NET 1
+#define MINIBLINK_NO_MULTITHREAD_NET 1
 
 // The allocations and releases in WebURLLoaderInternal are
 // Cocoa-exception-free (either simple Foundation classes or
@@ -190,7 +190,9 @@ public:
     bool m_isBlackList;
     bool m_isDataUrl;
     bool m_isProxy;
+    bool m_isProxyConnect; // 是否使用代理的Connect请求
     bool m_isProxyHeadRequest;
+    bool m_needParseMime; // 如果response为空的时候，是否需要在recv data的时候分析
 
     InitializeHandleInfo* m_initializeHandleInfo;
     bool m_isHoldJobToAsynCommit;
@@ -215,8 +217,6 @@ public:
 #endif
 
     DiskCacheItem* m_diskCacheItem;
-
-    RefPtr<PageNetExtraData> m_pageNetExtraData;
 };
 
 } // namespace net

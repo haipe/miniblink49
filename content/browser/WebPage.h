@@ -13,9 +13,6 @@
 #include "third_party/WebKit/Source/wtf/HashSet.h"
 #include "net/PageNetExtraData.h"
 
-#if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
-class CefBrowserHostImpl;
-#endif
 
 #if (defined ENABLE_WKE) && (ENABLE_WKE == 1)
 namespace wke {
@@ -101,6 +98,7 @@ public:
     void fireResizeEvent(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
     int getCursorInfoType() const;
+    void setCursorInfoType(int type);
 
     blink::IntSize viewportSize() const;
     void setViewportSize(const blink::IntSize& size);
@@ -152,20 +150,11 @@ public:
     void setScreenInfo(const blink::WebScreenInfo& info);
     blink::WebScreenInfo screenInfo();
 
-#if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
-    CefBrowserHostImpl* browser();
-    void setBrowser(CefBrowserHostImpl* browserImpl);
-#endif
-
     blink::WebViewImpl* webViewImpl();
     WebPageImpl* webPageImpl();
     blink::WebFrame* mainFrame();
 
     static WebPage* getSelfForCurrentContext();
-
-    PassRefPtr<net::PageNetExtraData> getPageNetExtraData();
-    void setCookieJarFullPath(const char* path);
-    void setLocalStorageFullPath(const char* path);
 
     WebFrameClientImpl* webFrameClientImpl();
 

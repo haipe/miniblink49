@@ -302,6 +302,12 @@ int WebPage::getCursorInfoType() const
     return -1;
 }
 
+void WebPage::setCursorInfoType(int type)
+{
+    if (m_pageImpl)
+        m_pageImpl->setCursorInfoType(type);
+}
+
 IntSize WebPage::viewportSize() const
 { 
     if (m_pageImpl)
@@ -325,13 +331,13 @@ void WebPage::setHWND(HWND hwnd)
 void WebPage::setHwndRenderOffset(const blink::IntPoint& offset)
 {
     if (m_pageImpl)
-        m_pageImpl->m_hwndRenderOffset = offset;
+        m_pageImpl->setHwndRenderOffset(offset);
 }
 
 blink::IntPoint WebPage::getHwndRenderOffset() const
 {
     if (m_pageImpl)
-        return m_pageImpl->m_hwndRenderOffset;
+        return m_pageImpl->getHwndRenderOffset();
     return blink::IntPoint();
 }
 
@@ -415,23 +421,6 @@ void WebPage::setBackgroundColor(COLORREF c) {
         m_pageImpl->setBackgroundColor(c);
 }
 
-#if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
-CefBrowserHostImpl* WebPage::browser()
-{ 
-    ASSERT(m_pageImpl);
-    if (m_pageImpl)
-        return m_pageImpl->browser();
-    return nullptr;
-}
-
-void WebPage::setBrowser(CefBrowserHostImpl* browserImpl)
-{
-    ASSERT(m_pageImpl);
-    if (m_pageImpl)
-        m_pageImpl->setBrowser(browserImpl);
-}
-#endif
-
 bool WebPage::canGoBack()
 {
     if (!m_pageImpl)
@@ -494,25 +483,6 @@ blink::WebScreenInfo WebPage::screenInfo()
     if (m_pageImpl)
         return m_pageImpl->screenInfo();
     return blink::WebScreenInfo();
-}
-
-PassRefPtr<net::PageNetExtraData> WebPage::getPageNetExtraData()
-{
-    if (m_pageImpl)
-        return m_pageImpl->m_pageNetExtraData;
-    return nullptr;
-}
-
-void WebPage::setCookieJarFullPath(const char* path)
-{
-    if (m_pageImpl)
-        return m_pageImpl->setCookieJarFullPath(path);
-}
-
-void WebPage::setLocalStorageFullPath(const char* path)
-{
-    if (m_pageImpl)
-        return m_pageImpl->setLocalStorageFullPath(path);
 }
 
 WebPage* WebPage::getSelfForCurrentContext()

@@ -14,17 +14,34 @@ class WebPage;
 }
 #endif
 
-#if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
-class CefBrowserHostImpl;
-#endif
-
 namespace net {
 
 class RequestExtraData : public blink::WebURLRequest::ExtraData {
 public:
+    RequestExtraData()
+    {
+        m_isDownload = false;
+    }
+
     virtual ~RequestExtraData() override
     {
 
+    }
+
+    void setIsDownload(const String& downloadName)
+    {
+        m_downloadName = downloadName;
+        m_isDownload = true;
+    }
+
+    bool isDownload() const
+    {
+        return m_isDownload;
+    }
+
+    String getDownloadName() const
+    {
+        return m_downloadName;
     }
 
     blink::WebLocalFrame* getFrame()
@@ -44,7 +61,7 @@ public:
 
     void setFrame(blink::WebLocalFrame* frame)
     {
-        m_frameId = page->getFrameIdByBlinkFrame(frame);
+        m_frameId = page->getFrameIdByBlinkFrame(reinterpret_cast<const blink::WebFrame*>(frame));
     }
 
 private:
@@ -55,10 +72,8 @@ public:
 #if (defined ENABLE_WKE) && (ENABLE_WKE == 1)
     content::WebPage* page;
 #endif
-
-#if (defined ENABLE_CEF) && (ENABLE_CEF == 1)
-    CefBrowserHostImpl* browser;
-#endif
+    String m_downloadName;
+    bool m_isDownload;
 };
 
 } // net

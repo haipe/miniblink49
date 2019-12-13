@@ -14,7 +14,7 @@
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "wke/wkeWebView.h"
 
-void wkeDeleteWillSendRequestInfo(wkeWebView webWindow, wkeWillSendRequestInfo* info);
+void WKE_CALL_TYPE wkeDeleteWillSendRequestInfo(wkeWebView webWindow, wkeWillSendRequestInfo* info);
 
 namespace net {
 
@@ -36,7 +36,7 @@ struct MainTaskArgs {
         delete resourceError;
     }
 
-    static MainTaskArgs* build(void* ptr, size_t size, size_t nmemb, size_t totalSize, CURL* handle, bool isProxy)
+    static MainTaskArgs* build(void* ptr, size_t size, size_t nmemb, size_t totalSize, CURL* handle, bool isProxyConnect)
     {
         MainTaskArgs* args = new MainTaskArgs();
         args->size = size;
@@ -46,9 +46,7 @@ struct MainTaskArgs {
         args->ref = 0;
         memcpy(args->ptr, ptr, totalSize);
 
-        curl_easy_getinfo(handle, !isProxy ? CURLINFO_RESPONSE_CODE : CURLINFO_HTTP_CONNECTCODE, &args->httpCode);
-        if (isProxy && 0 == args->httpCode)
-            args->httpCode = 200;
+        curl_easy_getinfo(handle, !isProxyConnect ? CURLINFO_RESPONSE_CODE : CURLINFO_HTTP_CONNECTCODE, &args->httpCode); // 只有使用了代理的Connect请求才需要特殊处理
 
         double contentLength = 0;
         curl_easy_getinfo(handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &args->contentLength);
@@ -232,7 +230,7 @@ public:
         if (!job)
             return nullptr;
 
-        MainTaskArgs* args = MainTaskArgs::build(ptr, size, nmemb, totalSize, job->m_handle, job->m_isProxy);
+        MainTaskArgs* args = MainTaskArgs::build(ptr, size, nmemb, totalSize, job->m_handle, job->m_isProxyConnect);
         WebURLLoaderManagerMainTask* task = new WebURLLoaderManagerMainTask(jobId, type, args);
 
         if (job->m_isSynchronous)
@@ -250,7 +248,7 @@ public:
         WebURLLoaderInternal* job = autoLockJob.lock();
         if (!job)
             return nullptr;
-        MainTaskArgs* args = MainTaskArgs::build(ptr, size, nmemb, totalSize, job->m_handle, job->m_isProxy);
+        MainTaskArgs* args = MainTaskArgs::build(ptr, size, nmemb, totalSize, job->m_handle, job->m_isProxyConnect);
         WebURLLoaderManagerMainTask* task = new WebURLLoaderManagerMainTask(jobId, type, args);
         return task;
     }
@@ -540,13 +538,17 @@ static bool isDownloadResponse(WebURLLoaderInternal* job, const AtomicString& co
 
 #if ENABLE_WKE == 1
 
-static bool dispatchDownloadToWke(WebPage* page, WebURLLoaderInternal* job, const utf8* url , const AtomicString& contentType)
+static bool dispatchDownloadToWke(WebPage* page, WebURLLoaderInternal* job, const utf8* url , const AtomicString& contentType, const String& downloadName)
 {
     job->m_cacheForDownloadOpt = WebURLLoaderInternal::kCacheForDownloadYes;
 
     Vector<char> mimeBuf = WTF::ensureStringToUTF8((String)contentType, true);
     
-    String contentDisposition = job->m_response.httpHeaderField("Content-Disposition");
+    String contentDisposition;
+    if (!downloadName.isNull() && !downloadName.isEmpty())
+        contentDisposition = WTF::ensureStringToUTF8String(downloadName);
+    else
+        contentDisposition = job->m_response.httpHeaderField("Content-Disposition");
     Vector<char> contentDispositionBuf = WTF::ensureStringToUTF8(contentDisposition, true);
     
     wkeNetJobDataBind dataBind = { 0 };
@@ -572,7 +574,7 @@ static bool dispatchDownloadToWke(WebPage* page, WebURLLoaderInternal* job, cons
     return true;
 }
 
-static bool dispatchResponseToWke(WebURLLoaderInternal* job, const AtomicString& contentType)
+static bool dispatchResponseToWke(WebURLLoaderInternal* job, const AtomicString& contentType, bool isRedirect)
 {
     RequestExtraData* requestExtraData = reinterpret_cast<RequestExtraData*>(job->firstRequest()->extraData());
     if (!requestExtraData) { //没有的情况可能是客户端用导出接口发送的请求，也可能是即将关闭程序
@@ -603,8 +605,8 @@ static bool dispatchResponseToWke(WebURLLoaderInternal* job, const AtomicString&
             }
         }
 
-        if (isDownloadResponse(job, contentType)) {
-            if (dispatchDownloadToWke(page, job, urlBuf.data(), contentType)) {
+        if (requestExtraData->isDownload() || (isDownloadResponse(job, contentType) && !isRedirect)) {
+            if (dispatchDownloadToWke(page, job, urlBuf.data(), contentType, requestExtraData->getDownloadName())) {
                 result = true;
                 break;
             }
@@ -689,6 +691,9 @@ static void doRedirect(WebURLLoaderInternal* job, const String& location, MainTa
         job->m_isRedirection = false;
 
         if (job->m_isWkeNetSetDataBeSetted) {
+            if (job->m_customHeaders)
+                curl_slist_free_all(job->m_customHeaders);
+            job->m_customHeaders = nullptr;
             WebURLLoaderManager::sharedInstance()->cancelWithHookRedirect(job);
             Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, new HookAsynTask(WebURLLoaderManager::sharedInstance(), job->m_id, false));
             return;
@@ -733,7 +738,7 @@ static bool setHttpResponseDataToJobWhenDidReceiveResponseOnMainThread(WebURLLoa
 //         textEncodingName = "utf-8";
     job->m_response.setTextEncodingName(textEncodingName);
 #if (defined ENABLE_WKE) && (ENABLE_WKE == 1)
-    if (dispatchResponseToWke(job, contentType))
+    if (dispatchResponseToWke(job, contentType, isHttpRedirect(args->httpCode)))
         return false;
 #endif
     if (equalIgnoringCase((String)(job->m_response.mimeType()), "multipart/x-mixed-replace")) {
@@ -765,8 +770,11 @@ static bool setHttpResponseDataToJobWhenDidReceiveResponseOnMainThread(WebURLLoa
         // https://passport.liepin.com/account/v1/elogin#sfrom=click-pc_homepage-front_navigation-ecomphr_new
         // 可能没location，或者开启了HSTS强制要求跳转到HTTPS。不过发现改这里没用，只需要在curl里把http改成https处理即可
         // 见third_party\libcurl\src\url.c
-        if (location.isEmpty() || WTF::equalIgnoringCase(nonAuthoritativeReason, "HSTS"))
-            location = job->m_effectiveUrl.c_str();
+        // 另外发现不能用这个m_effectiveUrl，因为https://zm12.sm-tc.cn/rec/person_entity?wd=shenma_query&title=%E7%BB%BF%E7%98%A6%EF%BC%9A%
+        // E5%87%A0%E5%A4%A7%E9%AA%97%E4%BA%BA%E8%AF%AF%E5%8C%BA%EF%BC%8C%E8%AE%A9%E4%BD%A0%E7%9A%84%E7%98%A6%E8%BA%AB%
+        // E4%B9%8B%E8%B7%AF%E6%9B%B4%E5%8A%A0%E6%9B%B2%E6%8A%98 这个网址会发生崩溃
+//         if (location.isEmpty() || WTF::equalIgnoringCase(nonAuthoritativeReason, "HSTS"))
+//             location = job->m_effectiveUrl.c_str();
 
         if (!location.isEmpty()) {
             Vector<char> locationBuffer = WTF::ensureStringToUTF8(location, false);
@@ -905,8 +913,6 @@ size_t WebURLLoaderManagerMainTask::handleHeaderCallbackOnMainThread(MainTaskArg
             // curl will follow the redirections internally. Thus this header callback
             // will be called more than one time with the line starting "HTTP" for one job.
             String httpCodeString = String::number(args->httpCode);
-            if (job->m_isProxy && 0 == args->httpCode)
-                httpCodeString = "200";
             int statusCodePos = header.find(httpCodeString);
 
             if (statusCodePos != -1) {
