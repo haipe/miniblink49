@@ -1228,11 +1228,11 @@ public:
     \
     ITERATOR1(void, wkeSaveMemoryCache, wkeWebView webView, "") \
     \
-    ITERATOR3(void, jsBindFunction, const char* name, jsNativeFunction fn, unsigned int argCount, "") \
+    ITERATOR4(void, jsBindFunction, wkeWebView view, const char* name, jsNativeFunction fn, unsigned int argCount, "") \
     ITERATOR2(void, jsBindGetter, const char* name, jsNativeFunction fn, "") \
     ITERATOR2(void, jsBindSetter, const char* name, jsNativeFunction fn, "") \
     \
-    ITERATOR4(void, wkeJsBindFunction, const char* name, wkeJsNativeFunction fn, void* param, unsigned int argCount, "") \
+    ITERATOR5(void, wkeJsBindFunction, wkeWebView view, const char* name, wkeJsNativeFunction fn, void* param, unsigned int argCount, "") \
     ITERATOR3(void, wkeJsBindGetter, const char* name, wkeJsNativeFunction fn, void* param, "") \
     ITERATOR3(void, wkeJsBindSetter, const char* name, wkeJsNativeFunction fn, void* param, "") \
     \

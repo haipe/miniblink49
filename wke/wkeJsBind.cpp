@@ -1392,6 +1392,7 @@ static void addFunction(v8::Local<v8::Context> context, const char* name, wkeJsN
     v8::MaybeLocal<v8::String> nameV8 = v8::String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal, -1);
     if (nameV8.IsEmpty())
         return;
+
     v8::Local<v8::String> nameV8Local = nameV8.ToLocalChecked();
     func->SetName(nameV8Local);
 
@@ -1573,11 +1574,9 @@ static void addAccessor(v8::Local<v8::Context> context, const char* name, wkeJsN
 #define JS_GETTER (1)
 #define JS_SETTER (2)
 
-struct jsFunctionInfo {
-    jsFunctionInfo() {
+struct jsSetAndGetFunctionInfo {
+    jsSetAndGetFunctionInfo() {
         memset(name, 0, MAX_NAME_LENGTH);
-        fn = nullptr;
-        param = nullptr;
         settet = nullptr;
         setterParam = nullptr;
         gettet = nullptr;
@@ -1587,8 +1586,6 @@ struct jsFunctionInfo {
     }
 
     char name[MAX_NAME_LENGTH];
-    wkeJsNativeFunction fn;
-    void* param;
 
     wkeJsNativeFunction settet;
     void* setterParam;
@@ -1600,7 +1597,60 @@ struct jsFunctionInfo {
     unsigned int funcType;
 };
 
-static Vector<jsFunctionInfo>* s_jsFunctionsPtr = nullptr;
+static Vector<jsSetAndGetFunctionInfo>* s_jsSetAndGetFunctionsPtr = nullptr;
+
+
+struct jsFunctionInfo {
+    jsFunctionInfo() {
+        view = nullptr;
+        memset(name, 0, MAX_NAME_LENGTH);
+        fn = nullptr;
+        param = nullptr;
+        argCount = 0;
+    }
+    wke::CWebView* view;            //所属view ,为null则是全局的绑定回调 ;add by haipe 2020 03 26
+
+    char name[MAX_NAME_LENGTH];
+    wkeJsNativeFunction fn;
+    void* param;
+
+    unsigned int argCount;
+};
+//static Vector<jsFunctionInfo>* s_jsFunctionsPtr = nullptr;
+typedef std::map<unsigned int, Vector<jsFunctionInfo>> JSFunctionInfoMap;
+static JSFunctionInfoMap* s_jsFunctionsPtr = nullptr;
+
+
+inline Vector<jsFunctionInfo>* getJsFunctionsPtr(wke::CWebView* view)
+{
+    if (!s_jsFunctionsPtr)
+        s_jsFunctionsPtr = new JSFunctionInfoMap();
+
+    if (!s_jsFunctionsPtr)
+        return nullptr;
+    
+    JSFunctionInfoMap& s_jsFunctionsRef = *s_jsFunctionsPtr;
+    unsigned int mapKey = view == nullptr ? 0 : (unsigned int)view;
+    JSFunctionInfoMap::iterator findIt = s_jsFunctionsRef.find(mapKey);
+    if (findIt == s_jsFunctionsRef.end()) {
+
+        s_jsFunctionsRef[mapKey] = Vector<jsFunctionInfo>();
+        findIt = s_jsFunctionsRef.find(mapKey);
+        if (findIt == s_jsFunctionsRef.end())
+            return nullptr;
+    }
+
+    return &findIt->second;
+}
+
+static jsValue WKE_CALL_TYPE JsNativeFunctionCallBack(const char* name, jsExecState es, void* param)
+{
+    jsFunctionInfo* info = (jsFunctionInfo*)param;
+    if (info && info->fn)
+        return info->fn(name, es, info->param);
+
+    return 0;
+}
 
 //[haipe]增加名称 2018-12-4 以便回调
 static jsValue WKE_CALL_TYPE wkeJsBindFunctionWrap(const char* name, jsExecState es, void* param)
@@ -1609,16 +1659,17 @@ static jsValue WKE_CALL_TYPE wkeJsBindFunctionWrap(const char* name, jsExecState
     return fn(name, es);//[haipe]增加名称 2018-12-4 以便回调
 }
 
-void WKE_CALL_TYPE jsBindFunction(const char* name, jsNativeFunction fn, unsigned int argCount)
+//增加 view 参数。add by haipe 2020 03 26
+void WKE_CALL_TYPE jsBindFunction(wkeWebView view, const char* name, jsNativeFunction fn, unsigned int argCount)
 {
-    wkeJsBindFunction(name, wkeJsBindFunctionWrap, fn, argCount);
+    wkeJsBindFunction(view, name, wkeJsBindFunctionWrap, fn, argCount);
 }
 
 static void wkeJsBindSetterGetter(const char* name, wkeJsNativeFunction fn, void* param, unsigned int funcType)
 {
-    if (!s_jsFunctionsPtr)
-        s_jsFunctionsPtr = new Vector<jsFunctionInfo>();
-    Vector<jsFunctionInfo>& s_jsFunctions = *s_jsFunctionsPtr;
+    if (!s_jsSetAndGetFunctionsPtr)
+        s_jsSetAndGetFunctionsPtr = new Vector<jsSetAndGetFunctionInfo>();
+    Vector<jsSetAndGetFunctionInfo>& s_jsFunctions = *s_jsSetAndGetFunctionsPtr;
 
     if (strlen(name) > MAX_NAME_LENGTH - 1)
         return;
@@ -1626,11 +1677,12 @@ static void wkeJsBindSetterGetter(const char* name, wkeJsNativeFunction fn, void
     for (unsigned int i = 0; i < s_jsFunctions.size(); ++i) {
         if (strcmp(name, s_jsFunctions[i].name) == 0) {
             JS_GETTER == funcType ? s_jsFunctions[i].gettet = fn : s_jsFunctions[i].settet = fn;
+    
             return;
         }
     }
-
-    jsFunctionInfo funcInfo;
+    
+    jsSetAndGetFunctionInfo funcInfo;
     strcpy(funcInfo.name, name);
     funcInfo.name[MAX_NAME_LENGTH - 1] = '\0';
     JS_GETTER == funcType ? funcInfo.gettet = fn : funcInfo.settet = fn;
@@ -1654,18 +1706,34 @@ void WKE_CALL_TYPE jsBindSetter(const char* name, jsNativeFunction fn)
     wkeJsBindSetterGetter(name, wkeJsBindFunctionWrap, fn, JS_SETTER);
 }
 
-void WKE_CALL_TYPE wkeJsBindFunction(const char* name, wkeJsNativeFunction fn, void* param, unsigned int argCount)
+void WKE_CALL_TYPE wkeClearJsBindFunction(wkeWebView view)//取消绑定。add by haipe 2020 03 26
+{
+    if (!s_jsFunctionsPtr)
+        return;
+
+    JSFunctionInfoMap& s_jsFunctionsRef = *s_jsFunctionsPtr;
+    unsigned int mapKey = view == nullptr ? 0 : (unsigned int)view;
+    JSFunctionInfoMap::iterator findIt = s_jsFunctionsRef.find(mapKey);
+    if (findIt == s_jsFunctionsRef.end())
+        return;
+    
+    s_jsFunctionsRef.erase(findIt);
+}
+
+void WKE_CALL_TYPE wkeJsBindFunction(wkeWebView view, const char* name, wkeJsNativeFunction fn, void* param, unsigned int argCount)//增加 view 参数。add by haipe 2020 03 26
 {
     wke::checkThreadCallIsValid(__FUNCTION__);
     if (!name || strlen(name) > MAX_NAME_LENGTH - 1)
         return;
 
-    if (!s_jsFunctionsPtr)
-        s_jsFunctionsPtr = new Vector<jsFunctionInfo>();
-    Vector<jsFunctionInfo>& s_jsFunctions = *s_jsFunctionsPtr;
+    Vector<jsFunctionInfo>* jsFunctions = getJsFunctionsPtr(view);
+    if (!jsFunctions)
+        return;
+
+    Vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
 
     for (unsigned int i = 0; i < s_jsFunctions.size(); ++i) {
-        if (s_jsFunctions[i].funcType == JS_FUNC && strcmp(name, s_jsFunctions[i].name) == 0) {
+        if (s_jsFunctions[i].view == view && strcmp(name, s_jsFunctions[i].name) == 0) {
             s_jsFunctions[i].fn = fn;
             s_jsFunctions[i].param = param;
             s_jsFunctions[i].argCount = argCount;
@@ -1674,12 +1742,12 @@ void WKE_CALL_TYPE wkeJsBindFunction(const char* name, wkeJsNativeFunction fn, v
     }
 
     jsFunctionInfo funcInfo;
+    funcInfo.view = view;
     strcpy(funcInfo.name, name);
     funcInfo.name[MAX_NAME_LENGTH - 1] = '\0';
     funcInfo.fn = fn;
     funcInfo.param = param;
     funcInfo.argCount = argCount;
-    funcInfo.funcType = JS_FUNC;
 
     s_jsFunctions.append(funcInfo);
 }
@@ -1969,19 +2037,52 @@ void onCreateGlobalObjectInMainFrame(content::WebFrameClientImpl* client, blink:
     execState->context.Reset(isolate, context);
     jsSetGlobal(execState, "wke", ::jsString(execState, wkeGetVersionString()));
 
-    if (s_jsFunctionsPtr) {
-        Vector<jsFunctionInfo>& s_jsFunctions = *s_jsFunctionsPtr;
+    if (s_jsSetAndGetFunctionsPtr) {
+        Vector<jsSetAndGetFunctionInfo>& s_jsSetAndGetFunctions = *s_jsSetAndGetFunctionsPtr;
 
-        for (size_t i = 0; i < s_jsFunctions.size(); ++i) {
-            if (s_jsFunctions[i].funcType == JS_FUNC)
-                addFunction(context, s_jsFunctions[i].name, s_jsFunctions[i].fn, s_jsFunctions[i].param, s_jsFunctions[i].argCount);
-            else {
-                wkeJsNativeFunction getter = s_jsFunctions[i].gettet;
-                void* getterParam = s_jsFunctions[i].getterParam;
-                wkeJsNativeFunction setter = s_jsFunctions[i].settet;
-                void* setterParam = s_jsFunctions[i].setterParam;
-                addAccessor(context, s_jsFunctions[i].name, getter, getterParam, setter, setterParam);
+        for (size_t i = 0; i < s_jsSetAndGetFunctions.size(); ++i) {
+            if (s_jsSetAndGetFunctions[i].funcType != JS_FUNC) {
+
+                wkeJsNativeFunction getter = s_jsSetAndGetFunctions[i].gettet;
+                void* getterParam = s_jsSetAndGetFunctions[i].getterParam;
+                wkeJsNativeFunction setter = s_jsSetAndGetFunctions[i].settet;
+                void* setterParam = s_jsSetAndGetFunctions[i].setterParam;
+                addAccessor(context, s_jsSetAndGetFunctions[i].name, getter, getterParam, setter, setterParam);
             }
+        }
+    }
+
+    if (s_jsFunctionsPtr) {
+
+        //先添加全局的
+        Vector<jsFunctionInfo>* jsFunctions = getJsFunctionsPtr(nullptr);
+        if (jsFunctions) {
+
+            //printf("<------------------- global \n");
+            Vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
+            for (size_t i = 0; i < s_jsFunctions.size(); ++i) {
+
+                //printf("context:%x, view:%x, name:%s, param:%x.\n", context, s_jsFunctions[i].view, s_jsFunctions[i].name, s_jsFunctions[i].param);
+                //addFunction(context, s_jsFunctions[i].name, JsNativeFunctionCallBack, (void*)&s_jsFunctions[i], 1);
+                addFunction(context, s_jsFunctions[i].name, s_jsFunctions[i].fn, s_jsFunctions[i].param, s_jsFunctions[i].argCount);
+            }
+
+            //printf("global ------------------->\n");
+        }
+
+        //再添加单独绑定的
+        jsFunctions = getJsFunctionsPtr(wkeWebView);
+        if (jsFunctions) {
+
+            //printf("<------------------- bind\n");
+            Vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
+            for (size_t i = 0; i < s_jsFunctions.size(); ++i) {
+
+                //printf("context:%x, view:%x, name:%s, param:%x.\n", context, s_jsFunctions[i].view, s_jsFunctions[i].name, s_jsFunctions[i].param);
+                addFunction(context, s_jsFunctions[i].name, s_jsFunctions[i].fn, s_jsFunctions[i].param, s_jsFunctions[i].argCount);
+            }
+
+            //printf("bind ------------------->\n");
         }
     }
 }
