@@ -3784,11 +3784,45 @@ MaybeHandle<Object> ArrayConstructInitializeElements(Handle<JSArray> array,
 
 
 void ElementsAccessor::InitializeOncePerProcess() {
+#if 1
+#define TEMP_NEW(Class, Kind, Store) new Class(#Kind)
+
+	static ElementsAccessor* accessor_array[kElementsKindCount];
+	//static ElementsAccessor* accessor_array[LAST_ELEMENTS_KIND - FIRST_ELEMENTS_KIND + 1];
+	unsigned int i = 0;
+	
+	accessor_array[i++] = TEMP_NEW(FastPackedSmiElementsAccessor, FAST_SMI_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FastHoleySmiElementsAccessor, FAST_HOLEY_SMI_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FastPackedObjectElementsAccessor, FAST_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FastHoleyObjectElementsAccessor, FAST_HOLEY_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FastPackedDoubleElementsAccessor, FAST_DOUBLE_ELEMENTS, FixedDoubleArray);
+	accessor_array[i++] = TEMP_NEW(FastHoleyDoubleElementsAccessor, FAST_HOLEY_DOUBLE_ELEMENTS, FixedDoubleArray);
+	accessor_array[i++] = TEMP_NEW(DictionaryElementsAccessor, DICTIONARY_ELEMENTS, SeededNumberDictionary);
+	accessor_array[i++] = TEMP_NEW(FastSloppyArgumentsElementsAccessor, FAST_SLOPPY_ARGUMENTS_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(SlowSloppyArgumentsElementsAccessor, SLOW_SLOPPY_ARGUMENTS_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FastStringWrapperElementsAccessor, FAST_STRING_WRAPPER_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(SlowStringWrapperElementsAccessor, SLOW_STRING_WRAPPER_ELEMENTS, FixedArray);
+	accessor_array[i++] = TEMP_NEW(FixedUint8ElementsAccessor, UINT8_ELEMENTS, FixedUint8Array);
+	accessor_array[i++] = TEMP_NEW(FixedInt8ElementsAccessor, INT8_ELEMENTS, FixedInt8Array);
+	accessor_array[i++] = TEMP_NEW(FixedUint16ElementsAccessor, UINT16_ELEMENTS, FixedUint16Array);
+	accessor_array[i++] = TEMP_NEW(FixedInt16ElementsAccessor, INT16_ELEMENTS, FixedInt16Array);
+	accessor_array[i++] = TEMP_NEW(FixedUint32ElementsAccessor, UINT32_ELEMENTS, FixedUint32Array);
+	accessor_array[i++] = TEMP_NEW(FixedInt32ElementsAccessor, INT32_ELEMENTS, FixedInt32Array);
+	accessor_array[i++] = TEMP_NEW(FixedFloat32ElementsAccessor, FLOAT32_ELEMENTS, FixedFloat32Array);
+	accessor_array[i++] = TEMP_NEW(FixedFloat64ElementsAccessor, FLOAT64_ELEMENTS, FixedFloat64Array);
+	accessor_array[i++] = TEMP_NEW(FixedUint8ClampedElementsAccessor, UINT8_CLAMPED_ELEMENTS, FixedUint8ClampedArray);
+
+#undef TEMP_NEW
+
+#else
+
   static ElementsAccessor* accessor_array[] = {
 #define ACCESSOR_ARRAY(Class, Kind, Store) new Class(#Kind),
       ELEMENTS_LIST(ACCESSOR_ARRAY)
 #undef ACCESSOR_ARRAY
   };
+
+#endif
 
   STATIC_ASSERT((sizeof(accessor_array) / sizeof(*accessor_array)) ==
                 kElementsKindCount);

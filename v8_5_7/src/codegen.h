@@ -102,6 +102,7 @@ V8_EXPORT_PRIVATE double modulo(double x, double y);
 
 // Custom implementation of math functions.
 double fast_sqrt(double input, Isolate* isolate);
+void init_fast_sqrt_function(Isolate* isolate);
 void lazily_initialize_fast_sqrt(Isolate* isolate);
 
 class CodeAgingHelper {

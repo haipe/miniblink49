@@ -1617,30 +1617,46 @@ struct jsFunctionInfo {
     unsigned int argCount;
 };
 //static Vector<jsFunctionInfo>* s_jsFunctionsPtr = nullptr;
-typedef std::map<unsigned int, std::vector<jsFunctionInfo>> JSFunctionInfoMap;
+typedef Vector<jsFunctionInfo> jsFunctionInfoVector;
+typedef WTF::HashMap<unsigned int, Vector<jsFunctionInfo>> JSFunctionInfoMap;
+//typedef std::map<unsigned int, std::vector<jsFunctionInfo>> JSFunctionInfoMap;
 static JSFunctionInfoMap* s_jsFunctionsPtr = nullptr;
 
 
-inline std::vector<jsFunctionInfo>* getJsFunctionsPtr(wke::CWebView* view)
+static JSFunctionInfoMap::iterator findJSFunctionInfoMap(unsigned int value)
+{
+	if (!s_jsFunctionsPtr)
+		s_jsFunctionsPtr = new JSFunctionInfoMap();
+
+	if (0 == value)
+		return s_jsFunctionsPtr->end();
+
+	JSFunctionInfoMap::iterator it = s_jsFunctionsPtr->find(value);
+	return it;
+}
+
+inline jsFunctionInfoVector* getJsFunctionsPtr(wke::CWebView* view)
 {
     if (!s_jsFunctionsPtr)
         s_jsFunctionsPtr = new JSFunctionInfoMap();
 
     if (!s_jsFunctionsPtr)
         return nullptr;
-    
-    JSFunctionInfoMap& s_jsFunctionsRef = *s_jsFunctionsPtr;
-    unsigned int mapKey = view == nullptr ? 0 : (unsigned int)view;
-    JSFunctionInfoMap::iterator findIt = s_jsFunctionsRef.find(mapKey);
-    if (findIt == s_jsFunctionsRef.end()) {
 
-        s_jsFunctionsRef[mapKey] = std::vector<jsFunctionInfo>();
-        findIt = s_jsFunctionsRef.find(mapKey);
+	unsigned int findKey = view == nullptr ? 0 : (unsigned int)view;
+	JSFunctionInfoMap::iterator findIt = findJSFunctionInfoMap(findKey);
+
+    if (findIt == s_jsFunctionsPtr->end()) {
+
+		JSFunctionInfoMap& s_jsFunctionsRef = *s_jsFunctionsPtr;
+		s_jsFunctionsRef.add(findKey, jsFunctionInfoVector());
+
+        findIt = findJSFunctionInfoMap(findKey);
         if (findIt == s_jsFunctionsRef.end())
             return nullptr;
     }
 
-    return &findIt->second;
+    return &findIt->value;
 }
 
 static jsValue WKE_CALL_TYPE JsNativeFunctionCallBack(const char* name, jsExecState es, void* param)
@@ -1711,13 +1727,10 @@ void WKE_CALL_TYPE wkeClearJsBindFunction(wkeWebView view)//取消绑定。add b
     if (!s_jsFunctionsPtr)
         return;
 
-    JSFunctionInfoMap& s_jsFunctionsRef = *s_jsFunctionsPtr;
-    unsigned int mapKey = view == nullptr ? 0 : (unsigned int)view;
-    JSFunctionInfoMap::iterator findIt = s_jsFunctionsRef.find(mapKey);
-    if (findIt == s_jsFunctionsRef.end())
-        return;
-    
-    s_jsFunctionsRef.erase(findIt);
+    unsigned int findKey = view == nullptr ? 0 : (unsigned int)view;
+    JSFunctionInfoMap::iterator findIt = findJSFunctionInfoMap(findKey);
+    if (findIt != s_jsFunctionsPtr->end())
+		s_jsFunctionsPtr->remove(findIt);
 }
 
 void WKE_CALL_TYPE wkeJsBindFunction(wkeWebView view, const char* name, wkeJsNativeFunction fn, void* param, unsigned int argCount)//增加 view 参数。add by haipe 2020 03 26
@@ -1726,11 +1739,11 @@ void WKE_CALL_TYPE wkeJsBindFunction(wkeWebView view, const char* name, wkeJsNat
     if (!name || strlen(name) > MAX_NAME_LENGTH - 1)
         return;
 
-    std::vector<jsFunctionInfo>* jsFunctions = getJsFunctionsPtr(view);
+	jsFunctionInfoVector* jsFunctions = getJsFunctionsPtr(view);
     if (!jsFunctions)
         return;
 
-    std::vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
+	jsFunctionInfoVector& s_jsFunctions = *jsFunctions;
 
     for (unsigned int i = 0; i < s_jsFunctions.size(); ++i) {
         if (s_jsFunctions[i].view == view && strcmp(name, s_jsFunctions[i].name) == 0) {
@@ -1749,7 +1762,7 @@ void WKE_CALL_TYPE wkeJsBindFunction(wkeWebView view, const char* name, wkeJsNat
     funcInfo.param = param;
     funcInfo.argCount = argCount;
 
-    s_jsFunctions.push_back(funcInfo);
+    s_jsFunctions.append(funcInfo);
 }
 
 void WKE_CALL_TYPE wkeJsBindGetter(const char* name, wkeJsNativeFunction fn, void* param)
@@ -2055,11 +2068,11 @@ void onCreateGlobalObjectInMainFrame(content::WebFrameClientImpl* client, blink:
     if (s_jsFunctionsPtr) {
 
         //先添加全局的
-        std::vector<jsFunctionInfo>* jsFunctions = getJsFunctionsPtr(nullptr);
+		jsFunctionInfoVector* jsFunctions = getJsFunctionsPtr(nullptr);
         if (jsFunctions) {
 
             //printf("<------------------- global \n");
-            std::vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
+			jsFunctionInfoVector& s_jsFunctions = *jsFunctions;
             for (size_t i = 0; i < s_jsFunctions.size(); ++i) {
 
                 //printf("context:%x, view:%x, name:%s, param:%x.\n", context, s_jsFunctions[i].view, s_jsFunctions[i].name, s_jsFunctions[i].param);
@@ -2075,7 +2088,7 @@ void onCreateGlobalObjectInMainFrame(content::WebFrameClientImpl* client, blink:
         if (jsFunctions) {
 
             //printf("<------------------- bind\n");
-            std::vector<jsFunctionInfo>&s_jsFunctions = *jsFunctions;
+			jsFunctionInfoVector& s_jsFunctions = *jsFunctions;
             for (size_t i = 0; i < s_jsFunctions.size(); ++i) {
 
                 //printf("context:%x, view:%x, name:%s, param:%x.\n", context, s_jsFunctions[i].view, s_jsFunctions[i].name, s_jsFunctions[i].param);
